@@ -1,0 +1,50 @@
+# Rust
+**/target/
+**/*.rs.bk
+**/*.pdb
+
+# Parachain binaries and artifacts
+**/binaries/
+**/*.wasm
+**/*.bin
+*.wasm
+*.bin
+
+# Node.js
+**/node_modules/
+**/dist/
+**/build/
+**/.cache/
+
+# Hardhat
+**/artifacts/
+**/cache/
+**/typechain/
+**/typechain-types/
+
+# Environment
+**/.env
+**/.env.local
+**/.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+.tmp/
+temp/

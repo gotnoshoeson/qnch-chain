@@ -1,0 +1,26 @@
+{
+  "name": "qnch-chain",
+  "version": "1.0.0",
+  "private": true,
+  "description": "QNCH Chain: Polkadot EVM Parachain with Deployment Control",
+  "author": "liminal",
+  "license": "MIT",
+  "scripts": {
+    "install:contracts": "cd contracts && yarn install",
+    "fund": "cd contracts && yarn fund",
+    "test": "cd contracts && yarn test",
+    "compile:contracts": "cd contracts && npx hardhat compile",
+    "clean:contracts": "cd contracts && npx hardhat clean",
+    "build:parachain": "cd parachain && cargo build --release",
+    "build:parachain:dev": "cd parachain && cargo build",
+    "check:parachain": "cd parachain && cargo check",
+    "test:parachain": "cd parachain && cargo test",
+    "start:dev": "cd parachain && pop up parachain -f network.toml",
+    "clean:parachain": "cd parachain && cargo clean",
+    "format:parachain": "cd parachain && cargo fmt",
+    "clippy:parachain": "cd parachain && cargo clippy -- -D warnings"
+  },
+  "workspaces": [
+    "contracts"
+  ]
+}
