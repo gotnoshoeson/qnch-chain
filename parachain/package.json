@@ -1,0 +1,7 @@
+{
+  "name": "@qnch/parachain",
+  "version": "0.0.1",
+  "scripts": {
+    "chain": "pop up network network.toml"
+  }
+}

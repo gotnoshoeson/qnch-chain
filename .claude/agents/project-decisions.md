@@ -7,59 +7,68 @@ tools:
 
 # Project Decisions Log
 
-## Session Date: October 9, 2025
+## Session Date: October 27, 2025 (Updated)
 
 ### Key Decisions Made
 
 #### 1. Template Choice
-**Decision**: Use OpenZeppelin EVM Runtime Template
+**Decision**: Use Pop CLI-based EVM Parachain Template
 **Rationale**:
-- Audited and production-ready
-- H160 (20-byte) Ethereum addresses
-- Already configured for Frontier pallets
-- Simpler than building from scratch
+- Modern, actively maintained tooling
+- Frontier pallets pre-configured (pallet-evm + pallet-ethereum)
+- Rapid development with `pop` commands
+- Cumulus parachain framework built-in
+- H160 EVM address support out-of-the-box
+- Polkadot SDK stable2407 + Frontier stable2407
 
-**Location**: `/home/liminal/code/polkadot-sdk/parachain-evm/` (copied from OpenZeppelin template repo)
+**Location**: `/home/liminal/code/qnch-chain/parachain/`
 
-**Why this location**: User wanted template files in the current working directory (polkadot-sdk), not a separate repository. OpenZeppelin templates are designed to be standalone - you copy just the template subdirectory you need.
+**Why Pop CLI**: Faster setup than building from scratch, includes best practices, excellent documentation, active community support
 
 ---
 
 #### 2. Deployment Control Approach
-**Decision**: Custom EnsureOrigin (Approach A)
+**Decision**: Custom Pallet + Runtime Integration (Two-Layer Approach)
 **Implementation**:
-- Create `runtime/src/deployment_control.rs`
-- Configure pallet-evm's `WithdrawOrigin` type
-- Only sudo account can deploy contracts directly
+- **Layer 1**: Custom pallet `pallet-evm-deployment-control` (pallet index 44)
+  - Storage: `AuthorizedDeployers` map
+  - Extrinsics: `authorize_deployer`, `revoke_deployer` (Root origin required)
+  - Query function: `is_authorized(account)`
+- **Layer 2**: Runtime-level enforcement via `EnsureSudoCanDeploy<Runtime>`
+  - Located in `runtime/src/deployment_control.rs`
+  - Integrated with pallet-evm's `WithdrawOrigin` type
+  - Checks authorization before allowing contract creation
 
-**Why**: Clean, maintainable, follows Substrate patterns
+**Why**: Maximum security, demonstrates advanced Substrate capabilities, maintainable, follows best practices
 
 **Rejected Alternatives**:
-- Precompile-based (too complex)
-- Transaction filter (less elegant)
+- Simple EnsureOrigin only (less flexible for future expansion)
+- Precompile-based (too complex for hackathon timeline)
+- Transaction filter (less elegant, harder to audit)
 
-**Implementation Guide**: `/home/liminal/code/polkadot-sdk/DEPLOYMENT_CONTROL_IMPLEMENTATION.md`
+**Implementation Guide**: `/home/liminal/code/qnch-chain/parachain/DEPLOYMENT_CONTROL_IMPLEMENTATION.md`
 
 ---
 
 #### 3. Sudo Address Type
-**Decision**: H160 (Ethereum address)
-**Your Sudo Account**: Will be your Metamask address (20 bytes)
+**Decision**: SS58 format (Substrate standard), with //Alice for development
+**Development Sudo Account**: `//Alice`
+- SS58 Address: `5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY`
+- Mnemonic: `bottom drive obey lake curtain smoke basket hold race lonely fit walk`
 
-**Why**: OpenZeppelin template uses H160 natively, simpler workflow
+**Why**: Pop CLI template uses standard Substrate addresses, secure for production with proper key generation
+
+**EVM Interaction**: For EVM operations, accounts are converted to H160 format internally by Frontier pallets
 
 **Configuration**:
-```javascript
-// Chain spec
-"sudo": {
-  "key": "0xYourMetamaskAddress"
-}
-
-// Hardhat
-accounts: {
-  mnemonic: "your sudo account seed phrase"
-}
+```rust
+// Chain spec (node/src/chain_spec.rs)
+sudo: Some(SudoConfig {
+    key: Some(get_account_id_from_seed::<sr25519::Public>("Alice")),
+})
 ```
+
+⚠️ **Production**: Generate new keys with `subkey generate --scheme sr25519`
 
 ---
 
@@ -143,118 +152,146 @@ accounts: {
 
 ## Implementation Status
 
-### Completed (Session 1 - Oct 9)
-- ✅ Analyzed hackathon rules
-- ✅ Reviewed FanSociety codebase
-- ✅ Created deployment control implementation guide
-- ✅ Cloned OpenZeppelin EVM template
-- ✅ Started runtime build
-- ✅ Created hackathon-coordinator agent
-- ✅ Created this decisions log
+### Completed (As of October 27, 2025)
+- ✅ Set up Pop CLI-based parachain project
+- ✅ Integrated Frontier pallets (EVM support)
+- ✅ Created custom `pallet-evm-deployment-control`
+- ✅ Implemented runtime-level enforcement (`EnsureSudoCanDeploy`)
+- ✅ Configured Cumulus parachain framework
+- ✅ Set up Hardhat development environment
+- ✅ Created comprehensive documentation:
+  - DEPLOYMENT_CONTROL_IMPLEMENTATION.md
+  - HARDHAT_DEPLOYMENT_GUIDE.md
+  - SUDO_ACCOUNT_CONFIGURATION.md
+  - CLAUDE.md (Pop CLI guide)
+  - QUICK_SUDO_REFERENCE.md
+- ✅ Configured monorepo build system
+- ✅ Added workspace npm scripts
+- ✅ Created specialized AI agents
 
-### Next Session Tasks
-- [ ] Verify runtime build completed
-- [ ] Run parachain node locally
-- [ ] Test EVM functionality (deploy simple contract)
-- [ ] Begin Phase 2: Add deployment control
+### Current Tasks (Phase 3: Testing)
+- [ ] Build parachain in release mode
+- [ ] Launch local network with relay chain
+- [ ] Test EVM JSON-RPC endpoints
+- [ ] Fund test accounts
+- [ ] Test deployment authorization flow
+- [ ] Deploy and test contracts via Hardhat
+- [ ] End-to-end integration testing
+
+### Upcoming (Phase 4: Submission)
+- [ ] Create demo video
+- [ ] Final documentation polish
+- [ ] Submit to hackathon
 
 ---
 
 ## Important Files Reference
 
-**Complete Implementation Guide**:
-`/home/liminal/code/polkadot-sdk/DEPLOYMENT_CONTROL_IMPLEMENTATION.md`
+**Monorepo Root**:
+`/home/liminal/code/qnch-chain/`
 
-**Hackathon Strategy**:
-`/home/liminal/code/polkadot-sdk/.claude/agents/hackathon-coordinator.md`
+**Parachain**:
+`/home/liminal/code/qnch-chain/parachain/`
 
-**Your Codebase**:
-`/home/liminal/code/fs/` (FanSociety monorepo)
+**Custom Pallet**:
+`/home/liminal/code/qnch-chain/parachain/pallets/evm-deployment-control/src/lib.rs`
 
-**Parachain Template**:
-`/home/liminal/code/polkadot-runtime-templates/evm-template/`
+**Runtime**:
+`/home/liminal/code/qnch-chain/parachain/runtime/src/lib.rs`
+`/home/liminal/code/qnch-chain/parachain/runtime/src/deployment_control.rs`
 
----
+**Hardhat**:
+`/home/liminal/code/qnch-chain/contracts/`
 
-## Questions for Next Session
+**Documentation**:
+`/home/liminal/code/qnch-chain/docs/`
+`/home/liminal/code/qnch-chain/parachain/CLAUDE.md`
+`/home/liminal/code/qnch-chain/parachain/DEPLOYMENT_CONTROL_IMPLEMENTATION.md`
 
-### Before Phase 2:
-1. Did the runtime build complete successfully?
-2. Can we run the node with `--dev` flag?
-3. Can we deploy a test contract via Remix?
-
-### For Phase 2:
-1. Where exactly in `lib.rs` should we add the EnsureOrigin config?
-2. What sudo account (Metamask address) will you use?
-3. Should we test on local node first or deploy to testnet?
-
----
-
-## Risk Assessment (Current)
-
-**Low Risk**:
-- Template setup ✅
-- Factory contract ✅
-- Frontend integration ✅
-
-**Medium Risk**:
-- Deployment control implementation (new territory)
-- Build time (25 minutes remaining)
-
-**High Risk** (if pursuing):
-- Full DOT-native token (complex XCM)
-- Timeline slippage if over-engineering
-
-**Mitigation**: Stick to phased plan, submit early (Nov 16)
+**AI Agents**:
+`/home/liminal/code/qnch-chain/.claude/agents/`
 
 ---
 
 ## Commands to Remember
 
-**Build runtime**:
+**From monorepo root** (`/home/liminal/code/qnch-chain/`):
 ```bash
-cd /home/liminal/code/polkadot-runtime-templates/evm-template
-cargo build --release
+# Build parachain (release)
+yarn build:parachain
+yarn pop:build
+
+# Start local network
+yarn start:dev
+yarn pop:up
+
+# Run tests
+yarn test:parachain
+yarn pop:test
+
+# Check, format, lint
+yarn check:parachain
+yarn format:parachain
+yarn clippy:parachain
 ```
 
-**Run node**:
+**From parachain directory**:
 ```bash
-./target/release/node-template --dev --rpc-cors all --rpc-methods=unsafe --rpc-external
+# Build with Pop CLI
+pop build --release
+
+# Start network
+pop up parachain -f network.toml
+
+# Call chain (authorize deployer)
+pop call chain \
+  --pallet EvmDeploymentControl \
+  --function authorize_deployer \
+  --args "0xYourEVMAddress" \
+  --url ws://localhost:9944 \
+  --suri //Alice \
+  --sudo
 ```
 
-**Deploy factory** (after Phase 2):
+**From contracts directory**:
 ```bash
-cd /home/liminal/code/fs/packages/hardhat
-npx hardhat run scripts/deploy-factory.js --network parachain_local
+# Fund accounts
+npx hardhat run scripts/fund-accounts.ts --network qnch
+
+# Test deployment control
+npx hardhat run scripts/test-deployment-control.ts --network qnch
+
+# Deploy contracts
+npx hardhat run scripts/deploy.ts --network qnch
 ```
 
 ---
 
-## Success Criteria Reminder
+## Technical Details
+
+- **Rust toolchain**: 1.77.2
+- **Polkadot SDK**: stable2407
+- **Frontier**: stable2407
+- **Parachain ID**: 2000
+- **Block time**: 6 seconds
+- **EVM RPC**: http://localhost:8545
+- **Substrate WebSocket**: ws://localhost:9944
+
+---
+
+## Success Criteria
 
 **Minimum Viable** (Pass Stage One):
-- Compiles and runs
-- Uses Polkadot SDK
-- Fits theme
+- ✅ Compiles and runs
+- ✅ Uses Polkadot SDK
+- ✅ Fits theme ("Building a blockchain")
+- ✅ Has documentation
 
 **Competitive** (Win Prize):
-- Deployment restriction working
-- Factory deploys contracts
-- Professional documentation
-- Video demo
-- Clear use case
+- ✅ Custom deployment control pallet (demonstrates advanced Substrate skills)
+- 🚧 Deployment restriction working (needs testing)
+- ✅ Professional documentation
+- ⏳ Video demo (upcoming)
+- ✅ Clear use case (controlled blockchain environments)
 
-**Your Advantages**:
-- Production-ready frontend ✅
-- Working factory contract ✅
-- Real-world use case ✅
-- 85-90% complete already ✅
-
----
-
-## Notes
-
-- Background build ID: `208a3e` (check with terminal)
-- Rust toolchain: nightly-2025-02-20
-- Polkadot SDK: polkadot-stable2503
-- Estimated build time: 15-25 minutes total
+**Current Status**: ~70% complete, on track for November 16 submission

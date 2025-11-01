@@ -1,4 +1,14 @@
 {
+  "name": "@qnch/hardhat",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "balances": "npx hardhat run scripts/check-balances.ts",
+    "fund": "npx hardhat run scripts/fund-accounts.ts",
+    "approve": "npx hardhat run scripts/approve-deployer.ts",
+    "test": "npx hardhat test --network qnch",
+    "test:deployment-control": "npx hardhat run scripts/test-deployment-control.ts"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.0",
     "@nomicfoundation/hardhat-ignition-viem": "^3.0.0",
@@ -15,11 +25,6 @@
     "hardhat": "^3.0.9",
     "typescript": "~5.8.0",
     "viem": "^2.30.0"
-  },
-  "type": "module",
-  "scripts": {
-    "fund": "npx hardhat run scripts/fund-accounts.ts",
-    "test": "npx hardhat run scripts/test-deployment-control.ts"
   },
   "dependencies": {
     "@polkadot/api": "^16.4.9",
