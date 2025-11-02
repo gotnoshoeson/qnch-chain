@@ -1,12 +1,33 @@
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { Keyring } from '@polkadot/keyring';
-import { cryptoWaitReady } from '@polkadot/util-crypto';
+import { cryptoWaitReady, blake2AsU8a, encodeAddress } from '@polkadot/util-crypto';
+import { u8aConcat } from '@polkadot/util';
 
 // Configuration
-const WS_ENDPOINT = process.env.WS_ENDPOINT || 'ws://127.0.0.1:45843';
+const WS_ENDPOINT = process.env.WS_ENDPOINT || 'ws://127.0.0.1:8545';
 
-// Alice's known test account seed (sudo account)
-const ALICE_SEED = '0xe5be9a5092b81bca64be81d212e7f2f9eba183bb7a90954f7b76361f6edb5c0a';
+/**
+ * Convert H160 (Ethereum) address to AccountId32 (Substrate) using HashedAddressMapping
+ * This matches the runtime's HashedAddressMapping<BlakeTwo256> implementation
+ * Returns the SS58-encoded address string
+ */
+function h160ToAccountId32(h160Address: string, ss58Format: number = 42): string {
+  // Remove 0x prefix if present
+  const cleanAddress = h160Address.startsWith('0x') ? h160Address.slice(2) : h160Address;
+
+  // Convert hex string to bytes
+  const addressBytes = new Uint8Array(Buffer.from(cleanAddress, 'hex'));
+
+  // Prefix with "evm:" as per HashedAddressMapping implementation
+  const prefix = new TextEncoder().encode('evm:');
+  const data = u8aConcat(prefix, addressBytes);
+
+  // Hash with Blake2-256 to get the AccountId32
+  const accountId32Bytes = blake2AsU8a(data, 256);
+
+  // Encode as SS58 address
+  return encodeAddress(accountId32Bytes, ss58Format);
+}
 
 /**
  * Wait for transaction to be finalized
@@ -60,16 +81,21 @@ export async function approveDeployer(accountAddress: string): Promise<boolean> 
   const chain = await api.rpc.system.chain();
   console.log(`✅ Connected to ${chain}\n`);
 
-  // Initialize keyring
-  const keyring = new Keyring({ type: 'ethereum' });
+  // Initialize keyring for Substrate accounts
+  const keyring = new Keyring({ type: 'sr25519' });
 
   // Get Alice's account (sudo)
-  const alice = keyring.addFromSeed(Buffer.from(ALICE_SEED.slice(2), 'hex'));
+  const alice = keyring.addFromUri('//Alice');
   console.log(`👤 Sudo Account: Alice (${alice.address})\n`);
 
+  // Convert H160 to AccountId32
+  const accountId32 = h160ToAccountId32(accountAddress);
+  console.log(`🔑 H160 Address: ${accountAddress}`);
+  console.log(`🔑 Mapped SS58: ${accountId32}\n`);
+
   try {
-    // Create the authorization transaction
-    const authorizeTx = api.tx.evmDeploymentControl.authorizeDeployer(accountAddress);
+    // Create the authorization transaction using the mapped AccountId32
+    const authorizeTx = api.tx.evmDeploymentControl.authorizeDeployer(accountId32);
 
     // Wrap it in sudo
     const sudoTx = api.tx.sudo.sudo(authorizeTx);
@@ -82,8 +108,8 @@ export async function approveDeployer(accountAddress: string): Promise<boolean> 
     // Wait for finalization
     await waitForFinalization(api, hash.toString());
 
-    // Verify authorization
-    const isAuthorized = await api.query.evmDeploymentControl.authorizedDeployers(accountAddress);
+    // Verify authorization using the mapped AccountId32
+    const isAuthorized = await api.query.evmDeploymentControl.authorizedDeployers(accountId32);
 
     await api.disconnect();
 
@@ -113,7 +139,9 @@ export async function isDeployerAuthorized(accountAddress: string): Promise<bool
   const api = await ApiPromise.create({ provider });
 
   try {
-    const isAuthorized = await api.query.evmDeploymentControl.authorizedDeployers(accountAddress);
+    // Convert H160 to AccountId32 for querying
+    const accountId32 = h160ToAccountId32(accountAddress);
+    const isAuthorized = await api.query.evmDeploymentControl.authorizedDeployers(accountId32);
     await api.disconnect();
     return isAuthorized.isSome;
   } catch (error) {

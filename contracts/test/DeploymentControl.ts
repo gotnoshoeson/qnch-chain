@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it, before } from "node:test";
 import { network } from "hardhat";
 import { HDKey } from '@scure/bip32';
-import { mnemonicToSeed } from '@scure/bip39';
+import { mnemonicToSeedSync } from '@scure/bip39';
 import { computeAddress } from 'ethers';
 import { approveDeployer, isDeployerAuthorized } from '../scripts/approve-deployer.js';
 
@@ -13,7 +13,7 @@ const HARDHAT_MNEMONIC = 'test test test test test test test test test test test
  * Derive Ethereum addresses from mnemonic (same as Hardhat does)
  */
 function deriveHardhatAccounts(mnemonic: string, count: number): { address: string; privateKey: string }[] {
-  const seed = mnemonicToSeed(mnemonic);
+  const seed = mnemonicToSeedSync(mnemonic);
   const masterKey = HDKey.fromMasterSeed(seed);
 
   const accounts: { address: string; privateKey: string }[] = [];

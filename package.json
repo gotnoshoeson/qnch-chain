@@ -10,9 +10,12 @@
     "parachain"
   ],
   "scripts": {
+    "build": "yarn workspace @qnch/parachain build",
     "chain": "yarn workspace @qnch/parachain chain",
+    "chain:logs": "yarn workspace @qnch/parachain chain:logs",
     "balances": "yarn workspace @qnch/hardhat balances",
     "fund": "yarn workspace @qnch/hardhat fund",
+    "fund:evm": "yarn workspace @qnch/hardhat fund:evm",
     "approve": "yarn workspace @qnch/hardhat approve",
     "test": "yarn workspace @qnch/hardhat test",
     "test:deployment-control": "yarn workspace @qnch/hardhat test:deployment-control"

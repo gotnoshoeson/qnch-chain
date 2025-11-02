@@ -6,7 +6,7 @@ import { mnemonicToSeedSync } from '@scure/bip39';
 import { computeAddress } from 'ethers';
 
 // Configuration
-const WS_ENDPOINT = process.env.WS_ENDPOINT || 'ws://127.0.0.1:45843';
+const WS_ENDPOINT = process.env.WS_ENDPOINT || 'ws://127.0.0.1:8545';
 
 // Hardhat mnemonic from config
 const HARDHAT_MNEMONIC = 'test test test test test test test test test test test junk';
@@ -76,9 +76,10 @@ async function main() {
 
     // Query balance from the mapped AccountId32
     const { data: balance } = await api.query.system.account(accountId32);
-    const free = balance.free.toString();
+    const free = balance.free.toBigInt();
+    const formattedBalance = Number(free) / 1e18;
 
-    console.log(`Account ${i}: ${h160Address} - ${free}`);
+    console.log(`Account ${i}: ${h160Address} - ${free.toString()} (${formattedBalance} UNIT)`);
   }
 
   await api.disconnect();

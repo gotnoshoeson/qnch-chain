@@ -15,3 +15,7 @@ default_command = "./target/release/parachain-template-node"
 
 [[parachains.collators]]
 name = "collator-01"
+port = 30333
+ws_port = 9944
+rpc_port = 8545
+args = ["-lruntime=debug", "-levm=debug", "-lethereum=debug"]

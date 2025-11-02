@@ -31,6 +31,22 @@
 pub use pallet::*;
 pub mod weights;
 
+/// Custom validation errors for deployment control
+/// These error codes are used in transaction validation to provide
+/// specific error messages to users via the RPC layer
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeploymentValidationError {
+    /// Deployer is not authorized to deploy contracts
+    UnauthorizedDeployer = 0,
+}
+
+impl From<DeploymentValidationError> for u8 {
+    fn from(err: DeploymentValidationError) -> u8 {
+        err as u8
+    }
+}
+
 #[cfg(test)]
 mod mock;
 

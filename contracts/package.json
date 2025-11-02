@@ -5,6 +5,7 @@
   "scripts": {
     "balances": "npx hardhat run scripts/check-balances.ts",
     "fund": "npx hardhat run scripts/fund-accounts.ts",
+    "fund:evm": "npx hardhat run scripts/fund-accounts-evm.ts",
     "approve": "npx hardhat run scripts/approve-deployer.ts",
     "test": "npx hardhat test --network qnch",
     "test:deployment-control": "npx hardhat run scripts/test-deployment-control.ts"

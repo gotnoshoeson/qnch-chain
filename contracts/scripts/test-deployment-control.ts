@@ -1,27 +1,57 @@
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { Keyring } from '@polkadot/keyring';
-import { cryptoWaitReady } from '@polkadot/util-crypto';
+import { cryptoWaitReady, blake2AsU8a, encodeAddress } from '@polkadot/util-crypto';
+import { u8aConcat } from '@polkadot/util';
 import { HDKey } from '@scure/bip32';
-import { mnemonicToSeed } from '@scure/bip39';
-import { computeAddress } from 'ethers';
-import hre from 'hardhat';
+import { mnemonicToSeedSync } from '@scure/bip39';
+import { ethers, computeAddress } from 'ethers';
 import fs from 'fs';
 import path from 'path';
 
 // Configuration
-const WS_ENDPOINT = 'ws://127.0.0.1:45843'; // Update this to your parachain endpoint
+const WS_ENDPOINT = process.env.WS_ENDPOINT || 'ws://127.0.0.1:8545';
+const RPC_ENDPOINT = process.env.RPC_ENDPOINT || 'http://127.0.0.1:8545';
 
 // Hardhat mnemonic from config
 const HARDHAT_MNEMONIC = 'test test test test test test test test test test test junk';
 
-// Alice's known test account seed (sudo account)
-const ALICE_SEED = '0xe5be9a5092b81bca64be81d212e7f2f9eba183bb7a90954f7b76361f6edb5c0a';
+// Test results tracking
+interface TestResult {
+  name: string;
+  passed: boolean;
+  error?: string;
+}
+
+const testResults: TestResult[] = [];
+
+/**
+ * Convert H160 (Ethereum) address to AccountId32 (Substrate) using HashedAddressMapping
+ * This matches the runtime's HashedAddressMapping<BlakeTwo256> implementation
+ * Returns the SS58-encoded address string
+ */
+function h160ToAccountId32(h160Address: string, ss58Format: number = 42): string {
+  // Remove 0x prefix if present
+  const cleanAddress = h160Address.startsWith('0x') ? h160Address.slice(2) : h160Address;
+
+  // Convert hex string to bytes
+  const addressBytes = new Uint8Array(Buffer.from(cleanAddress, 'hex'));
+
+  // Prefix with "evm:" as per HashedAddressMapping implementation
+  const prefix = new TextEncoder().encode('evm:');
+  const data = u8aConcat(prefix, addressBytes);
+
+  // Hash with Blake2-256 to get the AccountId32
+  const accountId32Bytes = blake2AsU8a(data, 256);
+
+  // Encode as SS58 address
+  return encodeAddress(accountId32Bytes, ss58Format);
+}
 
 /**
  * Derive Ethereum addresses from mnemonic (same as Hardhat does)
  */
 function deriveHardhatAccounts(mnemonic: string, count: number): { address: string; privateKey: string }[] {
-  const seed = mnemonicToSeed(mnemonic);
+  const seed = mnemonicToSeedSync(mnemonic);
   const masterKey = HDKey.fromMasterSeed(seed);
 
   const accounts: { address: string; privateKey: string }[] = [];
@@ -75,11 +105,10 @@ async function waitForFinalization(api: ApiPromise, txHash: string): Promise<voi
 
 /**
  * Compile contracts
+ * Note: Assumes contracts are already compiled. Run `npx hardhat compile` manually if needed.
  */
 async function compileContracts() {
-  console.log('📝 Compiling contracts...');
-  await hre.run('compile');
-  console.log('✅ Contracts compiled\n');
+  console.log('📝 Using existing compiled contracts (run `npx hardhat compile` if needed)\n');
 }
 
 /**
@@ -122,10 +151,10 @@ async function main() {
   console.log(`✅ Connected to ${chain}\n`);
 
   // Initialize keyring for Substrate/Polkadot accounts
-  const keyring = new Keyring({ type: 'ethereum' });
+  const keyring = new Keyring({ type: 'sr25519' });
 
   // Get Alice's account (sudo)
-  const alice = keyring.addFromSeed(Buffer.from(ALICE_SEED.slice(2), 'hex'));
+  const alice = keyring.addFromUri('//Alice');
   console.log(`👤 Sudo Account: Alice (${alice.address})\n`);
 
   // Derive the first 2 Hardhat accounts
@@ -144,33 +173,84 @@ async function main() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   const accountToAuthorize = accounts[0].address;
-  console.log(`📋 Authorizing: ${accountToAuthorize}`);
+  const accountId32 = h160ToAccountId32(accountToAuthorize);
+
+  console.log(`📋 Authorizing H160: ${accountToAuthorize}`);
+  console.log(`    Mapped SS58: ${accountId32}`);
 
   try {
-    // Create the authorization transaction
-    const authorizeTx = api.tx.evmDeploymentControl.authorizeDeployer(accountToAuthorize);
+    // Create the authorization transaction using the mapped AccountId32
+    const authorizeTx = api.tx.evmDeploymentControl.authorizeDeployer(accountId32);
 
     // Wrap it in sudo
     const sudoTx = api.tx.sudo.sudo(authorizeTx);
 
-    // Sign and send
+    // Sign and send with proper finalization waiting
     console.log('  📤 Submitting sudo transaction...');
-    const hash = await sudoTx.signAndSend(alice);
-    console.log(`  ✅ Transaction sent: ${hash.toString()}`);
 
-    // Wait for finalization
-    await waitForFinalization(api, hash.toString());
+    await new Promise<void>((resolve, reject) => {
+      let spinnerInterval: NodeJS.Timeout;
+      const spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+      let spinnerIndex = 0;
 
-    // Verify authorization
-    const isAuthorized = await api.query.evmDeploymentControl.authorizedDeployers(accountToAuthorize);
+      sudoTx.signAndSend(alice, ({ status, events, dispatchError }) => {
+        // Clear spinner if active
+        if (spinnerInterval) {
+          clearInterval(spinnerInterval);
+          process.stdout.write('\r\x1b[K'); // Clear the line
+        }
+
+        if (status.isReady) {
+          console.log(`  📍 Transaction ready, submitting...`);
+        }
+
+        if (status.isBroadcast) {
+          console.log(`  📡 Transaction broadcast to network`);
+          // Start spinner
+          spinnerInterval = setInterval(() => {
+            process.stdout.write(`\r  ${spinner[spinnerIndex]} Waiting for inclusion in block...`);
+            spinnerIndex = (spinnerIndex + 1) % spinner.length;
+          }, 80);
+        }
+
+        if (status.isInBlock) {
+          process.stdout.write('\r\x1b[K'); // Clear spinner line
+          console.log(`  ✅ Included in block: ${status.asInBlock.toString()}`);
+          console.log(`  ⏳ Waiting for finalization...`);
+        }
+
+        if (status.isFinalized) {
+          process.stdout.write('\r\x1b[K'); // Clear any spinner
+          console.log(`  ✅ Finalized in block: ${status.asFinalized.toString()}`);
+
+          // Check for errors
+          if (dispatchError) {
+            if (dispatchError.isModule) {
+              const decoded = api.registry.findMetaError(dispatchError.asModule);
+              reject(new Error(`${decoded.section}.${decoded.name}: ${decoded.docs}`));
+            } else {
+              reject(new Error(dispatchError.toString()));
+            }
+          } else {
+            resolve();
+          }
+        }
+      }).catch(reject);
+    });
+
+    // Verify authorization using the mapped AccountId32
+    const isAuthorized = await api.query.evmDeploymentControl.authorizedDeployers(accountId32);
     if (isAuthorized.isSome) {
       console.log(`  ✅ Account 0 is now authorized!\n`);
+      testResults.push({ name: 'Authorize Account 0', passed: true });
     } else {
-      console.log(`  ⚠️  Account 0 authorization status unclear (may need more time)\n`);
+      console.log(`  ⚠️  Account 0 authorization status unclear\n`);
+      testResults.push({ name: 'Authorize Account 0', passed: false, error: 'Authorization status unclear' });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('  ❌ Failed to authorize account:', error);
     console.log('');
+    testResults.push({ name: 'Authorize Account 0', passed: false, error: error.message });
   }
 
   // Step 2: Deploy with authorized account (Account 0)
@@ -188,40 +268,48 @@ async function main() {
   try {
     console.log(`🚀 Deploying Counter contract with Account 0 (${accounts[0].address})...`);
 
-    // Use viem to deploy
-    const publicClient = await hre.viem.getPublicClient({
-      networkName: 'qnch'
+    // Create provider and wallet
+    const provider = new ethers.JsonRpcProvider(RPC_ENDPOINT);
+    const wallet = new ethers.Wallet(accounts[0].privateKey, provider);
+
+    console.log(`  📋 Deployer address: ${wallet.address}`);
+
+    // Query Substrate balance (unified balance)
+    const accountId32 = h160ToAccountId32(wallet.address);
+    const { data: balanceData } = await api.query.system.account(accountId32);
+    const balance = balanceData.free.toBigInt();
+    console.log(`  💰 Balance: ${balance.toString()} (${Number(balance) / 1e18} UNIT)`);
+
+    // Get current base fee from the latest block
+    const latestBlock = await provider.getBlock('latest');
+    const baseFee = latestBlock?.baseFeePerGas || BigInt(1000000000);
+    const gasPrice = baseFee * BigInt(2); // Use 2x base fee to ensure transaction goes through
+
+    console.log(`  ⛽ Base Fee: ${baseFee.toString()}, Using Gas Price: ${gasPrice.toString()}`);
+
+    // Create contract factory and deploy
+    const factory = new ethers.ContractFactory(abi, bytecode, wallet);
+
+    const contract = await factory.deploy({
+      gasPrice: gasPrice,
+      gasLimit: 500000
     });
 
-    const [deployer] = await hre.viem.getWalletClients({
-      networkName: 'qnch'
-    });
+    console.log(`  📤 Deployment transaction: ${contract.deploymentTransaction()?.hash}`);
+    console.log('  ⏳ Waiting for deployment...');
 
-    console.log(`  📋 Deployer address: ${deployer.account.address}`);
+    // Wait for deployment
+    await contract.waitForDeployment();
+    const contractAddress = await contract.getAddress();
 
-    // Deploy the contract
-    const hash = await deployer.deployContract({
-      abi,
-      bytecode: bytecode as `0x${string}`,
-    });
-
-    console.log(`  📤 Deployment transaction: ${hash}`);
-    console.log('  ⏳ Waiting for transaction receipt...');
-
-    // Wait for the transaction receipt
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-    if (receipt.contractAddress) {
-      console.log(`  ✅ SUCCESS! Contract deployed at: ${receipt.contractAddress}`);
-      console.log(`  📊 Gas used: ${receipt.gasUsed.toString()}\n`);
-    } else {
-      console.log(`  ❌ Deployment failed - no contract address in receipt`);
-      console.log(`  Receipt status: ${receipt.status}\n`);
-    }
+    console.log(`  ✅ SUCCESS! Contract deployed at: ${contractAddress}`);
+    console.log(`  📊 Block: ${contract.deploymentTransaction()?.blockNumber}\n`);
+    testResults.push({ name: 'Deploy with Authorized Account', passed: true });
   } catch (error: any) {
     console.error('  ❌ Deployment FAILED with authorized account (unexpected!)');
     console.error('  Error:', error.message || error);
     console.log('');
+    testResults.push({ name: 'Deploy with Authorized Account', passed: false, error: error.message });
   }
 
   // Step 3: Try to deploy with unauthorized account (Account 1)
@@ -233,47 +321,99 @@ async function main() {
     console.log(`🚀 Attempting to deploy Counter with Account 1 (${accounts[1].address})...`);
     console.log('  ⚠️  This SHOULD FAIL because Account 1 is not authorized\n');
 
-    // Get wallet client for account 1
-    const publicClient = await hre.viem.getPublicClient({
-      networkName: 'qnch'
+    // Create provider and wallet for unauthorized account
+    const provider = new ethers.JsonRpcProvider(RPC_ENDPOINT);
+    const unauthorizedWallet = new ethers.Wallet(accounts[1].privateKey, provider);
+
+    console.log(`  📋 Deployer address: ${unauthorizedWallet.address}`);
+
+    // Query Substrate balance (unified balance)
+    const accountId32 = h160ToAccountId32(unauthorizedWallet.address);
+    const { data: balanceData } = await api.query.system.account(accountId32);
+    const balance = balanceData.free.toBigInt();
+    console.log(`  💰 Balance: ${balance.toString()} (${Number(balance) / 1e18} UNIT)`);
+
+    // Get current base fee
+    const latestBlock = await provider.getBlock('latest');
+    const baseFee = latestBlock?.baseFeePerGas || BigInt(1000000000);
+    const gasPrice = baseFee * BigInt(2);
+
+    console.log(`  ⛽ Base Fee: ${baseFee.toString()}, Using Gas Price: ${gasPrice.toString()}`);
+
+    // Try to deploy the contract with appropriate gas settings
+    const factory = new ethers.ContractFactory(abi, bytecode, unauthorizedWallet);
+    const contract = await factory.deploy({
+      gasPrice: gasPrice,
+      gasLimit: 500000
     });
 
-    const walletClients = await hre.viem.getWalletClients({
-      networkName: 'qnch'
-    });
+    console.log(`  📤 Deployment transaction: ${contract.deploymentTransaction()?.hash}`);
+    console.log('  ⏳ Waiting for deployment...');
 
-    // Use the second account (index 1)
-    const unauthorizedDeployer = walletClients[1];
+    await contract.waitForDeployment();
+    const contractAddress = await contract.getAddress();
 
-    console.log(`  📋 Deployer address: ${unauthorizedDeployer.account.address}`);
-
-    // Try to deploy the contract
-    const hash = await unauthorizedDeployer.deployContract({
-      abi,
-      bytecode: bytecode as `0x${string}`,
-    });
-
-    console.log(`  📤 Deployment transaction: ${hash}`);
-    console.log('  ⏳ Waiting for transaction receipt...');
-
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-    if (receipt.contractAddress) {
-      console.log(`  ❌ UNEXPECTED! Contract deployed at: ${receipt.contractAddress}`);
-      console.log(`  ⚠️  Deployment control may not be working correctly!\n`);
-    } else {
-      console.log(`  ❌ Deployment rejected (status: ${receipt.status})`);
-      console.log(`  ⚠️  Transaction was processed but deployment failed\n`);
-    }
+    console.log(`  ❌ UNEXPECTED! Contract deployed at: ${contractAddress}`);
+    console.log(`  ⚠️  Deployment control may not be working correctly!\n`);
+    testResults.push({ name: 'Reject Unauthorized Deployment', passed: false, error: 'Deployment succeeded when it should have failed' });
   } catch (error: any) {
-    console.log('  ✅ EXPECTED FAILURE! Deployment was rejected.');
-    console.log(`  📋 Error: ${error.message || error}\n`);
+    // Check if it's a deployment control error
+    const errorMsg = (error.message || error.toString()).toLowerCase();
+    const errorCode = error.code || '';
+
+    // Check for various error patterns that indicate deployment control rejection
+    const isDeploymentControlError =
+      errorMsg.includes('deployment by approved accounts only') ||
+      errorMsg.includes('approved accounts only') ||
+      errorMsg.includes('intrinsic gas too low') ||
+      errorMsg.includes('invalid transaction') ||
+      errorMsg.includes('payment') ||
+      errorMsg.includes('custom error') ||
+      errorCode === 'UNKNOWN_ERROR' ||
+      errorCode === -32603;
+
+    if (isDeploymentControlError) {
+      console.log('  ✅ EXPECTED FAILURE! Deployment was rejected by deployment control.');
+      console.log(`  📋 Reason: ${errorMsg.includes('deployment by approved') ? 'Deployment by approved accounts only' : 'Deployer not authorized'}\n`);
+      testResults.push({ name: 'Reject Unauthorized Deployment', passed: true });
+    } else {
+      console.log('  ⚠️  UNEXPECTED ERROR! Deployment failed but not due to authorization.');
+      console.log(`  📋 Error: ${error.message || error}\n`);
+      testResults.push({ name: 'Reject Unauthorized Deployment', passed: false, error: error.message || error.toString() });
+    }
   }
 
   // Disconnect
   await api.disconnect();
+
+  // Print test summary
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('✨ Test complete!');
+  console.log('📊 TEST SUMMARY');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+  const passed = testResults.filter(r => r.passed).length;
+  const failed = testResults.filter(r => !r.passed).length;
+
+  testResults.forEach((result, index) => {
+    const icon = result.passed ? '✅' : '❌';
+    console.log(`${icon} ${index + 1}. ${result.name}`);
+    if (!result.passed && result.error) {
+      console.log(`   └─ Error: ${result.error}`);
+    }
+  });
+
+  console.log('');
+  console.log(`Total: ${testResults.length} tests`);
+  console.log(`✅ Passed: ${passed}`);
+  console.log(`❌ Failed: ${failed}`);
+  console.log('');
+
+  if (failed === 0) {
+    console.log('🎉 All tests passed!');
+  } else {
+    console.log('⚠️  Some tests failed.');
+  }
+
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 }
 

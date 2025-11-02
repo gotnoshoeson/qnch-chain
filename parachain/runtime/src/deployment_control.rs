@@ -1,4 +1,4 @@
-use pallet_evm::{AddressMapping, EnsureAddressOrigin};
+use pallet_evm::{AddressMapping, EnsureAddressOrigin, OnCreate};
 use sp_core::H160;
 use sp_std::marker::PhantomData;
 
@@ -14,6 +14,28 @@ use sp_std::marker::PhantomData;
 ///
 /// This provides runtime-level enforcement of deployment restrictions,
 /// which is more secure than application-level enforcement alone.
+
+/// OnCreate hook that restricts contract deployments to authorized deployers only
+///
+/// Note: This panics (reverts the transaction) if the deployer is not authorized.
+/// Panicking in the OnCreate hook will cause the entire EVM transaction to fail.
+pub struct RestrictedDeployment<T>(PhantomData<T>);
+
+impl<T> OnCreate<T> for RestrictedDeployment<T>
+where
+    T: pallet_evm_deployment_control::Config + pallet_evm::Config,
+{
+    fn on_create(owner: H160, _contract: H160) {
+        // Convert H160 to AccountId using the runtime's address mapping
+        let account_id = T::AddressMapping::into_account_id(owner);
+
+        // Check if deployer is authorized - panic if not (this will revert the transaction)
+        if !pallet_evm_deployment_control::Pallet::<T>::is_authorized(&account_id) {
+            panic!("Deployer not authorized");
+        }
+    }
+}
+
 pub struct EnsureSudoCanDeploy<T, I = ()>(PhantomData<(T, I)>);
 
 impl<T, I> EnsureAddressOrigin<T::RuntimeOrigin> for EnsureSudoCanDeploy<T, I>

@@ -46,11 +46,13 @@ use sp_runtime::{
     traits::{
         BlakeTwo256, DispatchInfoOf, Dispatchable, IdentifyAccount, PostDispatchInfoOf, Verify,
     },
-    transaction_validity::{TransactionValidity, TransactionValidityError},
+    transaction_validity::{InvalidTransaction, TransactionValidity, TransactionValidityError},
     MultiSignature,
 };
 
 use sp_std::prelude::*;
+use pallet_evm::AddressMapping;
+use pallet_ethereum::{Transaction as EthereumTransaction, TransactionAction};
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
@@ -220,10 +222,11 @@ pub const HOURS: BlockNumber = MINUTES * 60;
 pub const DAYS: BlockNumber = HOURS * 24;
 
 // Unit = the base number of indivisible units for balances
+// Using 18 decimals for EVM compatibility (1 UNIT = 10^18 wei)
 pub const MICROUNIT: Balance = 1_000_000_000_000;
 pub const MILLIUNIT: Balance = 1_000 * MICROUNIT;
 pub const CENTIUNIT: Balance = 10 * MILLIUNIT;
-pub const UNIT: Balance = 100 * MILLIUNIT;
+pub const UNIT: Balance = 1_000 * MILLIUNIT;
 
 /// The existential deposit. Set to 1/10 of the Connected Relay Chain.
 pub const EXISTENTIAL_DEPOSIT: Balance = MILLIUNIT;
@@ -391,7 +394,41 @@ impl fp_self_contained::SelfContainedCall for RuntimeCall {
         len: usize,
     ) -> Option<TransactionValidity> {
         match self {
-            RuntimeCall::Ethereum(call) => call.validate_self_contained(info, dispatch_info, len),
+            RuntimeCall::Ethereum(call) => {
+                // First do standard ethereum validation
+                let result = call.validate_self_contained(info, dispatch_info, len)?;
+
+                // Check if transaction is valid so far
+                if result.is_err() {
+                    return Some(result);
+                }
+
+                // Check deployment authorization for contract creation transactions
+                if let pallet_ethereum::Call::transact { transaction } = call {
+                    // Check if this is a contract creation (CREATE)
+                    let is_create = match transaction {
+                        EthereumTransaction::Legacy(t) => t.action == TransactionAction::Create,
+                        EthereumTransaction::EIP2930(t) => t.action == TransactionAction::Create,
+                        EthereumTransaction::EIP1559(t) => t.action == TransactionAction::Create,
+                    };
+
+                    if is_create {
+                        // Convert H160 to AccountId
+                        let account_id = <Runtime as pallet_evm::Config>::AddressMapping::into_account_id(*info);
+
+                        // Check if deployer is authorized
+                        if !pallet_evm_deployment_control::Pallet::<Runtime>::is_authorized(&account_id) {
+                            return Some(Err(TransactionValidityError::Invalid(
+                                InvalidTransaction::Custom(
+                                    pallet_evm_deployment_control::DeploymentValidationError::UnauthorizedDeployer.into()
+                                )
+                            )));
+                        }
+                    }
+                }
+
+                Some(result)
+            }
             _ => None,
         }
     }
@@ -404,6 +441,7 @@ impl fp_self_contained::SelfContainedCall for RuntimeCall {
     ) -> Option<Result<(), TransactionValidityError>> {
         match self {
             RuntimeCall::Ethereum(call) => {
+                // Authorization already checked in validate_self_contained
                 call.pre_dispatch_self_contained(info, dispatch_info, len)
             }
             _ => None,

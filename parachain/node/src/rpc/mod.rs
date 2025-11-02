@@ -24,6 +24,7 @@ use sp_runtime::traits::Block as BlockT;
 use substrate_frame_rpc_system::SystemApiServer;
 
 mod eth;
+
 pub use self::eth::{create_eth, EthDeps};
 
 /// A type representing all RPC extensions.

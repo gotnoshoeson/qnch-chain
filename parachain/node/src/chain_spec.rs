@@ -66,7 +66,7 @@ pub fn development_config() -> ChainSpec {
     // Give your base currency a unit name and decimal places
     let mut properties = sc_chain_spec::Properties::new();
     properties.insert("tokenSymbol".into(), "UNIT".into());
-    properties.insert("tokenDecimals".into(), 12.into());
+    properties.insert("tokenDecimals".into(), 18.into());
     properties.insert("ss58Format".into(), 42.into());
     properties.insert("basedOn".into(), "r0gue-io/evm-parachain".into());
 
@@ -118,7 +118,7 @@ pub fn local_testnet_config() -> ChainSpec {
     // Give your base currency a unit name and decimal places
     let mut properties = sc_chain_spec::Properties::new();
     properties.insert("tokenSymbol".into(), "UNIT".into());
-    properties.insert("tokenDecimals".into(), 12.into());
+    properties.insert("tokenDecimals".into(), 18.into());
     properties.insert("ss58Format".into(), 42.into());
     properties.insert("basedOn".into(), "r0gue-io/evm-parachain".into());
 
@@ -200,6 +200,45 @@ fn testnet_genesis(
         "polkadotXcm": {
             "safeXcmVersion": Some(SAFE_XCM_VERSION),
         },
-        "sudo": { "key": Some(root) }
+        "sudo": { "key": Some(root) },
+        "evm": {
+            "accounts": {
+                // Alice's EVM account (derived from //Alice with ethereum signature)
+                "0xd43593c715fdd31c61141abd04a99fd6822c8558": {
+                    "balance": "0xffffffffffffffffffffffffffffffff",
+                    "code": [],
+                    "nonce": "0x0",
+                    "storage": {}
+                },
+                // Hardhat test account 0 (1000 UNIT with 18 decimals = 0x3635C9ADC5DEA00000)
+                "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {
+                    "balance": "0x3635C9ADC5DEA00000",
+                    "code": [],
+                    "nonce": "0x0",
+                    "storage": {}
+                },
+                // Hardhat test account 1 (1000 UNIT with 18 decimals = 0x3635C9ADC5DEA00000)
+                "0x70997970C51812dc3A010C7d01b50e0d17dc79C8": {
+                    "balance": "0x3635C9ADC5DEA00000",
+                    "code": [],
+                    "nonce": "0x0",
+                    "storage": {}
+                },
+                // Hardhat test account 2 (1000 UNIT with 18 decimals = 0x3635C9ADC5DEA00000)
+                "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC": {
+                    "balance": "0x3635C9ADC5DEA00000",
+                    "code": [],
+                    "nonce": "0x0",
+                    "storage": {}
+                },
+                // Hardhat test account 3 (1000 UNIT with 18 decimals = 0x3635C9ADC5DEA00000)
+                "0x90F79bf6EB2c4f870365E785982E1f101E93b906": {
+                    "balance": "0x3635C9ADC5DEA00000",
+                    "code": [],
+                    "nonce": "0x0",
+                    "storage": {}
+                }
+            }
+        }
     })
 }

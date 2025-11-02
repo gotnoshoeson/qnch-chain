@@ -7,8 +7,8 @@ import { mnemonicToSeedSync } from '@scure/bip39';
 import { computeAddress } from 'ethers';
 
 // Configuration
-const WS_ENDPOINT = process.env.WS_ENDPOINT || 'ws://127.0.0.1:44803';
-const FUNDING_AMOUNT = '1000000000000000'; // 1000 tokens (adjust decimals based on your chain)
+const WS_ENDPOINT = process.env.WS_ENDPOINT || 'ws://127.0.0.1:8545';
+const FUNDING_AMOUNT = '1000000000000000000000'; // 1000 UNIT (18 decimals)
 
 // Hardhat mnemonic from config
 const HARDHAT_MNEMONIC = 'test test test test test test test test test test test junk';
