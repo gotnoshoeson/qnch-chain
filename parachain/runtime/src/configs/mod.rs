@@ -295,7 +295,7 @@ impl pallet_sudo::Config for Runtime {
 
 impl pallet_evm_deployment_control::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = (); // Configure based on benchmarking results.
+    type WeightInfo = pallet_evm_deployment_control::weights::SubstrateWeight<Runtime>;
 }
 
 parameter_types! {

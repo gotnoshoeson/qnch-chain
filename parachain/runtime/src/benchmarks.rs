@@ -35,4 +35,5 @@ frame_benchmarking::define_benchmarks!(
     [cumulus_pallet_xcmp_queue, XcmpQueue]
     [pallet_message_queue, MessageQueue]
     [pallet_evm, EVM]
+    [pallet_evm_deployment_control, EvmDeploymentControl]
 );

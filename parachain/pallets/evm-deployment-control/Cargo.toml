@@ -28,6 +28,7 @@ std = [
 	"frame-support/std",
 	"frame-system/std",
 	"sp-std/std",
+	"frame-benchmarking?/std",
 ]
 try-runtime = [
 	"frame-support/try-runtime",
