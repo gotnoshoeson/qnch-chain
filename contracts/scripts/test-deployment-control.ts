@@ -136,7 +136,8 @@ async function main() {
   console.log('1. Derive H160 addresses from test mnemonic');
   console.log('2. Authorize Account 0 for deployment');
   console.log('3. Deploy Counter contract with Account 0 (should succeed)');
-  console.log('4. Attempt to deploy with Account 1 (should fail)\n');
+  console.log('4. Attempt to deploy with Account 1 (should fail)');
+  console.log('5. Verify Account 1 CAN interact with deployed contract (should succeed)\n');
 
   // Wait for crypto to be ready
   await cryptoWaitReady();
@@ -265,6 +266,8 @@ async function main() {
   const { bytecode, abi } = getCompiledContract('Counter');
   console.log(`📦 Contract bytecode length: ${bytecode.length} bytes\n`);
 
+  let deployedContractAddress: string | null = null;
+
   try {
     console.log(`🚀 Deploying Counter contract with Account 0 (${accounts[0].address})...`);
 
@@ -300,9 +303,9 @@ async function main() {
 
     // Wait for deployment
     await contract.waitForDeployment();
-    const contractAddress = await contract.getAddress();
+    deployedContractAddress = await contract.getAddress();
 
-    console.log(`  ✅ SUCCESS! Contract deployed at: ${contractAddress}`);
+    console.log(`  ✅ SUCCESS! Contract deployed at: ${deployedContractAddress}`);
     console.log(`  📊 Block: ${contract.deploymentTransaction()?.blockNumber}\n`);
     testResults.push({ name: 'Deploy with Authorized Account', passed: true });
   } catch (error: any) {
@@ -381,6 +384,70 @@ async function main() {
       console.log(`  📋 Error: ${error.message || error}\n`);
       testResults.push({ name: 'Reject Unauthorized Deployment', passed: false, error: error.message || error.toString() });
     }
+  }
+
+  // Step 4: Test that unauthorized account CAN interact with deployed contract
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('STEP 4: UNAUTHORIZED Account 1 INTERACTING with contract');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+  if (deployedContractAddress) {
+    try {
+      console.log(`🔓 Testing if Account 1 can interact with deployed contract...`);
+      console.log(`  📍 Contract address: ${deployedContractAddress}`);
+      console.log(`  👤 Unauthorized account: ${accounts[1].address}\n`);
+
+      // Create provider and wallet for unauthorized account
+      const provider = new ethers.JsonRpcProvider(RPC_ENDPOINT);
+      const unauthorizedWallet = new ethers.Wallet(accounts[1].privateKey, provider);
+
+      // Connect to the deployed contract
+      const contract = new ethers.Contract(deployedContractAddress, abi, unauthorizedWallet);
+
+      // Step 4.1: Read current value
+      console.log('  📖 Step 4.1: Reading current counter value...');
+      const initialValue = await contract.x();
+      console.log(`  📊 Current value: ${initialValue}\n`);
+
+      // Step 4.2: Call inc() function to increment counter
+      console.log('  ✍️  Step 4.2: Calling inc() function with unauthorized account...');
+      const latestBlock = await provider.getBlock('latest');
+      const baseFee = latestBlock?.baseFeePerGas || BigInt(1000000000);
+      const gasPrice = baseFee * BigInt(2);
+
+      const tx = await contract.inc({
+        gasPrice: gasPrice,
+        gasLimit: 100000
+      });
+
+      console.log(`  📤 Transaction hash: ${tx.hash}`);
+      console.log(`  ⏳ Waiting for confirmation...`);
+
+      const receipt = await tx.wait();
+      console.log(`  ✅ Transaction confirmed in block: ${receipt?.blockNumber}\n`);
+
+      // Step 4.3: Read new value to verify state changed
+      console.log('  📖 Step 4.3: Reading new counter value...');
+      const newValue = await contract.x();
+      console.log(`  📊 New value: ${newValue}`);
+
+      if (newValue > initialValue) {
+        console.log(`  ✅ SUCCESS! Counter increased from ${initialValue} to ${newValue}`);
+        console.log(`  📋 This confirms: Unauthorized accounts CAN interact with deployed contracts!\n`);
+        testResults.push({ name: 'Unauthorized Account Can Interact', passed: true });
+      } else {
+        console.log(`  ❌ FAILED! Counter value did not increase.\n`);
+        testResults.push({ name: 'Unauthorized Account Can Interact', passed: false, error: 'Counter value did not increase' });
+      }
+    } catch (error: any) {
+      console.error('  ❌ FAILED! Unauthorized account could not interact with contract (unexpected!)');
+      console.error('  Error:', error.message || error);
+      console.log('');
+      testResults.push({ name: 'Unauthorized Account Can Interact', passed: false, error: error.message });
+    }
+  } else {
+    console.log('  ⚠️  Skipping Step 4: No contract deployed in Step 2\n');
+    testResults.push({ name: 'Unauthorized Account Can Interact', passed: false, error: 'No contract to interact with' });
   }
 
   // Disconnect

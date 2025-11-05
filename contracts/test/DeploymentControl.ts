@@ -153,4 +153,59 @@ describe("EVM Deployment Control", async function () {
     assert.ok(!isAccount1Authorized, 'Account 1 should remain unauthorized');
     console.log(`  ✅ Account 1 (${unauthorizedAccount.address}): UNAUTHORIZED\n`);
   });
+
+  it("Should allow unauthorized account (Account 1) to interact with deployed contract", async function () {
+    console.log('\n🔓 Test: Unauthorized account INTERACTING with deployed contract...\n');
+
+    // Get wallet clients
+    const walletClients = await viem.getWalletClients();
+    const authorizedWallet = walletClients[0]; // Account 0 - authorized
+    const unauthorizedWallet = walletClients[1]; // Account 1 - unauthorized
+
+    // Step 1: Deploy contract with AUTHORIZED account
+    console.log('  📋 Step 1: Deploying Counter with authorized Account 0...');
+    const counter = await viem.deployContract("Counter", {
+      client: { wallet: authorizedWallet }
+    });
+    console.log(`  ✅ Contract deployed at: ${counter.address}\n`);
+
+    // Verify initial state
+    const initialValue = await counter.read.x();
+    console.log(`  📊 Initial counter value: ${initialValue}`);
+    assert.equal(initialValue, 0n, 'Initial counter value should be 0');
+
+    // Step 2: UNAUTHORIZED account reads from the contract
+    console.log(`\n  📋 Step 2: Unauthorized Account 1 reading from contract...`);
+    const valueReadByUnauthorized = await publicClient.readContract({
+      address: counter.address,
+      abi: counter.abi,
+      functionName: 'x',
+    });
+    console.log(`  ✅ Read successful! Value: ${valueReadByUnauthorized}`);
+    assert.equal(valueReadByUnauthorized, 0n, 'Unauthorized account should be able to read');
+
+    // Step 3: UNAUTHORIZED account writes to the contract (calls inc())
+    console.log(`\n  📋 Step 3: Unauthorized Account 1 calling inc() function...`);
+    console.log(`  📋 Calling from: ${unauthorizedWallet.account.address}`);
+
+    const hash = await unauthorizedWallet.writeContract({
+      address: counter.address,
+      abi: counter.abi,
+      functionName: 'inc',
+    });
+    console.log(`  ✅ Transaction sent: ${hash}`);
+
+    // Wait for transaction to be mined
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    console.log(`  ✅ Transaction mined in block: ${receipt.blockNumber}`);
+
+    // Step 4: Verify the state changed
+    console.log(`\n  📋 Step 4: Verifying state change...`);
+    const newValue = await counter.read.x();
+    console.log(`  📊 New counter value: ${newValue}`);
+    assert.equal(newValue, 1n, 'Counter should be 1 after unauthorized account called inc()');
+
+    console.log('\n  ✅ SUCCESS: Unauthorized account can interact with deployed contracts!');
+    console.log('  📋 This confirms deployment control only restricts deployment, not usage.\n');
+  });
 });
